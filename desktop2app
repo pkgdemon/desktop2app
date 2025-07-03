@@ -1,0 +1,112 @@
+#!/bin/sh
+set -e
+
+# Usage: ./convert-desktop-to-app.sh /path/to/file.desktop [destination dir]
+# Converts XDG .desktop file to GNUstep .app bundle with verbose debug and absolute path support, with pixmap fallback.
+
+desktop_file="$1"
+dest_dir="${2:-/Applications}"
+
+if [ ! -f "$desktop_file" ]; then
+    echo "Usage: $0 /path/to/file.desktop [destination dir]"
+    exit 1
+fi
+
+# Extract Name, Exec, Icon
+name=$(grep -E '^Name=' "$desktop_file" | head -n1 | cut -d'=' -f2-)
+exec_cmd=$(grep -E '^Exec=' "$desktop_file" | head -n1 | cut -d'=' -f2- | sed 's/ *%[fFuUdDnNickvm]//g')
+icon_name=$(grep -E '^Icon=' "$desktop_file" | head -n1 | cut -d'=' -f2-)
+
+echo "🔹 Name extracted: $name"
+echo "🔹 Exec extracted: $exec_cmd"
+echo "🔹 Icon specified in .desktop: $icon_name"
+
+if [ -z "$name" ] || [ -z "$exec_cmd" ]; then
+    echo "Error: Name or Exec missing in $desktop_file"
+    exit 1
+fi
+
+# Prepare bundle paths
+app_name=$(echo "$name" | tr ' ' '_')
+app_bundle="${dest_dir}/${name}.app"
+mkdir -p "${app_bundle}/Resources"
+
+icon_file=""
+
+# Check if icon_name is an absolute path and file exists
+if [ -f "$icon_name" ]; then
+    echo "✅ Icon specified as absolute path and found: $icon_name"
+    icon_file="$icon_name"
+else
+    echo "🔹 Icon specified is not an absolute path or not found, searching in theme folders..."
+    preferred_sizes="96x96 64x64 48x48"
+    icon_dirs="/usr/local/share/icons /usr/share/icons"
+    echo "🔹 Searching for icon in these directories:"
+    for dir in $icon_dirs; do
+        echo "   $dir"
+    done
+    for dir in $icon_dirs; do
+        [ -d "$dir" ] || continue
+        for size in $preferred_sizes; do
+            echo "🔍 Searching in $dir for size $size for icon: ${icon_name}"
+            found=$(find "$dir" -type f \( -name "${icon_name}" -o -name "${icon_name}.png" \) 2>/dev/null | grep "/${size}/" | head -n1)
+            if [ -n "$found" ]; then
+                echo "✅ Found candidate icon: $found"
+                icon_file="$found"
+                break 2
+            fi
+        done
+    done
+
+    # If still not found, fallback to pixmaps
+    if [ -z "$icon_file" ]; then
+        echo "🔹 No icon found in theme folders, falling back to pixmaps..."
+        pixmap_dirs="/usr/local/share/pixmaps /usr/share/pixmaps"
+        for dir in $pixmap_dirs; do
+            echo "🔍 Searching in $dir for ${icon_name}.png"
+            if [ -f "${dir}/${icon_name}.png" ]; then
+                echo "✅ Found pixmap icon: ${dir}/${icon_name}.png"
+                icon_file="${dir}/${icon_name}.png"
+                break
+            fi
+        done
+    fi
+fi
+
+icon_target="${app_bundle}/Resources/${app_name}.png"
+
+if [ -n "$icon_file" ]; then
+    if command -v magick >/dev/null 2>&1; then
+        echo "🛠️  Trimming and copying icon using magick..."
+        magick "$icon_file" -trim +repage "$icon_target"
+    elif command -v convert >/dev/null 2>&1; then
+        echo "🛠️  Trimming and copying icon using convert..."
+        convert "$icon_file" -trim +repage "$icon_target"
+    else
+        echo "🛠️  Copying icon without trimming..."
+        cp "$icon_file" "$icon_target"
+    fi
+else
+    echo "⚠️  Icon not found, using blank placeholder."
+    touch "$icon_target"
+fi
+
+# Generate Info-gnustep.plist
+cat > "${app_bundle}/Resources/Info-gnustep.plist" <<EOF
+{
+    ApplicationName = "${name}";
+    NSExecutable = "${app_name}";
+    CFBundleIconFile = "${app_name}.png";
+    NSPrincipalClass = NSApplication;
+    NOTE = "Generated from .desktop by convert-desktop-to-app.sh with verbose output.";
+}
+EOF
+
+# Create executable wrapper
+cat > "${app_bundle}/${app_name}" <<EOF
+#!/bin/sh
+exec ${exec_cmd} "\$@"
+EOF
+chmod +x "${app_bundle}/${app_name}"
+
+echo "✅ Created GNUstep app bundle: ${app_bundle}"
