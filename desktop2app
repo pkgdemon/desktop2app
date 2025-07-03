@@ -2,7 +2,7 @@
 set -e
 
 # Usage: ./convert-desktop-to-app.sh /path/to/file.desktop [destination dir]
-# Converts XDG .desktop file to GNUstep .app bundle with verbose debug and absolute path support, with pixmap fallback.
+# Converts XDG .desktop file to GNUstep .app bundle with verbose debug, absolute path support, pixmap fallback, and SVG fallback.
 
 desktop_file="$1"
 dest_dir="${2:-/Applications}"
@@ -58,7 +58,7 @@ else
         done
     done
 
-    # If still not found, fallback to pixmaps
+    # Fallback to pixmaps
     if [ -z "$icon_file" ]; then
         echo "🔹 No icon found in theme folders, falling back to pixmaps..."
         pixmap_dirs="/usr/local/share/pixmaps /usr/share/pixmaps"
@@ -71,11 +71,34 @@ else
             fi
         done
     fi
+
+    # Fallback to scalable SVG conversion
+    if [ -z "$icon_file" ]; then
+        echo "🔹 No PNG or pixmap icon found, attempting SVG fallback in /usr/local/share/icons/hicolor/scalable..."
+        scalable_dir="/usr/local/share/icons/hicolor/scalable"
+        if [ -d "$scalable_dir" ]; then
+            found_svg=$(find "$scalable_dir" -type f \( -name "${icon_name}.svg" -o -name "${icon_name}" \) 2>/dev/null | head -n1)
+            if [ -n "$found_svg" ]; then
+                echo "✅ Found SVG icon for fallback: $found_svg"
+                if command -v rsvg-convert >/dev/null 2>&1; then
+                    echo "🛠️  Converting SVG to PNG using rsvg-convert..."
+                    rsvg-convert -w 256 -h 256 "$found_svg" -o "${app_bundle}/Resources/${app_name}.png"
+                    icon_file="converted"
+                elif command -v magick >/dev/null 2>&1; then
+                    echo "🛠️  Converting SVG to PNG using magick..."
+                    magick "$found_svg" -resize 256x256 "${app_bundle}/Resources/${app_name}.png"
+                    icon_file="converted"
+                else
+                    echo "⚠️  No SVG converter available."
+                fi
+            fi
+        fi
+    fi
 fi
 
 icon_target="${app_bundle}/Resources/${app_name}.png"
 
-if [ -n "$icon_file" ]; then
+if [ -n "$icon_file" ] && [ "$icon_file" != "converted" ]; then
     if command -v magick >/dev/null 2>&1; then
         echo "🛠️  Trimming and copying icon using magick..."
         magick "$icon_file" -trim +repage "$icon_target"
@@ -86,7 +109,7 @@ if [ -n "$icon_file" ]; then
         echo "🛠️  Copying icon without trimming..."
         cp "$icon_file" "$icon_target"
     fi
-else
+elif [ -z "$icon_file" ]; then
     echo "⚠️  Icon not found, using blank placeholder."
     touch "$icon_target"
 fi
@@ -98,7 +121,7 @@ cat > "${app_bundle}/Resources/Info-gnustep.plist" <<EOF
     NSExecutable = "${app_name}";
     CFBundleIconFile = "${app_name}.png";
     NSPrincipalClass = NSApplication;
-    NOTE = "Generated from .desktop by convert-desktop-to-app.sh with verbose output.";
+    NOTE = "Generated from .desktop by convert-desktop-to-app.sh with verbose output and SVG fallback.";
 }
 EOF
 
