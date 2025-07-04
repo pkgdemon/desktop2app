@@ -13,3 +13,7 @@ sudo ./desktop2app /usr/local/share/applications/firefox.desktop
 
 * Integration with GSWrapper_Launcher
 * Support for mime types
+
+**Known Issues**
+
+If file viewer in GWorkspace/Workspace is open it might be required to logout to get icons.
