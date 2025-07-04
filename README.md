@@ -1,6 +1,6 @@
 # desktop2app
 
-A quick tool to generate GNUstep App Wrappers from XDG applications.
+Tool to generate App Wrappers from XDG applications created with ChatGPT.
 
 
 **Usage**
