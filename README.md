@@ -11,5 +11,5 @@ sudo ./desktop2app /usr/local/share/applications/firefox.app
 
 **TODO**
 
-Integration with GSWrapper_Launcher
-Support for mime types
+* Integration with GSWrapper_Launcher
+* Support for mime types
