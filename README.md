@@ -6,7 +6,7 @@ A quick tool to generate GNUstep App Wrappers from XDG applications.
 **Usage**
 
 ```
-sudo ./desktop2app /usr/local/share/applications/firefox.app
+sudo ./desktop2app /usr/local/share/applications/firefox.desktop
 ```
 
 **TODO**
